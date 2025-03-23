@@ -1,0 +1,4 @@
+network:
+  wifi:
+    SSID: "MyNetwork"
+    Password: "MyPassword"
