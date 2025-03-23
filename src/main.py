@@ -41,14 +41,14 @@ def droneControlFunc(controller: TelloControl):
         raise StopIteration  # Custom stop signal
 
     control_map = {
-        'w': lambda: controller.moveUpDrone(30),
-        's': lambda: controller.moveDownDrone(30),
-        'a': lambda: controller.moveLeftDrone(30),
-        'd': lambda: controller.moveRightDrone(30),
-        'i': lambda: controller.moveForwardDrone(30),
-        'k': lambda: controller.moveBackwardDrone(30),
-        'j': lambda: controller.rotateLeftDrone(30),
-        'l': lambda: controller.rotateRightDrone(30),
+        'w': lambda: controller.moveUp(30),
+        's': lambda: controller.moveDown(30),
+        'a': lambda: controller.rotateLeft(30),
+        'd': lambda: controller.rotateRight(30),
+        'i': lambda: controller.moveForward(30),
+        'k': lambda: controller.moveBackward(30),
+        'j': lambda: controller.moveLeft(30),
+        'l': lambda: controller.moveRight(30),
         'z': lambda: controller.takeOffDrone(),
         '/': lambda: controller.landDrone(),
         'q': exit_control  # This will trigger a graceful exit
@@ -60,12 +60,20 @@ def droneControlFunc(controller: TelloControl):
                 key = msvcrt.getwch().lower()
                 action = control_map.get(key)
                 if action:
-                    # print(key)
-                    action()
+                    # print(f"Executing command: {key}")
+                    success = action()  # Execute the command and get the result
+                    if not success:
+                        print(f"Command failed: {key}")
+                    # Block further input until the current command is complete
+                    while msvcrt.kbhit():  # Clear any buffered key presses
+                        msvcrt.getwch()
                 else:
                     print(f"Invalid key: {key}. Try again.")
     except StopIteration:
         print("Drone control ended.")
+    finally:
+        if controller.isFlying:
+            ok = controller.landDrone()
 
 def main():
 
