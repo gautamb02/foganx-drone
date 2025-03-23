@@ -3,10 +3,12 @@ from configreader import config
 from logger.log import logger
 from network_manager.manager import TelloNetworkManager
 from tello_mananger.tello_manager import TelloControl
+from tello_camera_manager.tello_camera_manager import TelloCameraManager
 from djitellopy import Tello
 import time
 import msvcrt
 import threading
+import cv2
 
 logger.info("Starting application")
 
@@ -75,6 +77,19 @@ def droneControlFunc(controller: TelloControl):
         if controller.isFlying:
             ok = controller.landDrone()
 
+def cameraStreamThreadFunc(camera_manager: TelloCameraManager):
+    # This thread will keep showing frames until stopped
+    while camera_manager.streaming:
+        frame = camera_manager.get_current_frame()
+        if frame is not None:
+            cv2.imshow("Tello Camera", frame)
+            if cv2.waitKey(1) & 0xFF == 27:  # ESC to stop camera stream
+                camera_manager.stop_stream()
+                break
+        else:
+            time.sleep(0.01)
+    cv2.destroyAllWindows()
+
 def main():
 
     ok = setUpConfig()
@@ -92,9 +107,16 @@ def main():
     controller = TelloControl(tello) 
     controller.connectDrone()
 
+    camera_manager = TelloCameraManager(tello)
+    camera_manager.start_stream()
+
     controllerThread = threading.Thread(target=droneControlFunc, args=(controller,), daemon=True)
     threads.append(controllerThread)
     controllerThread.start()
+
+    cameraThread = threading.Thread(target=cameraStreamThreadFunc, args=(camera_manager,), daemon=True)
+    threads.append(cameraThread)
+    cameraThread.start()
 
     for thread in threads:
         thread.join()
