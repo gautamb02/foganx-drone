@@ -1,5 +1,8 @@
 import argparse
-from condifgreader import config
+from configreader import config
+from logger.log import logger
+
+logger.info("Starting application")
 
 def main():
     parser = argparse.ArgumentParser(description="Read configuration file")
@@ -8,6 +11,9 @@ def main():
 
     config_data = config.read_config(args.config)
     if config_data:
-        print(config_data.network.wifi.SSID)
+        logger.info("Config Loaded Successfully.")
+    else:
+        logger.fatal("Error reading in config.")
+        return
 
 main()
