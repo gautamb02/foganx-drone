@@ -3,14 +3,16 @@ from configreader import config
 from logger.log import logger
 from network_manager.manager import TelloNetworkManager
 from tello_mananger.tello_manager import TelloControl
+from tello_camera_manager.tello_camera_manager import TelloCameraManager
 from djitellopy import Tello
 import time
 import msvcrt
 import threading
+import cv2
 
 logger.info("Starting application")
 
-global config_data 
+global config_data
 
 def setUpConfig():
     global config_data
@@ -25,20 +27,41 @@ def setUpConfig():
     else:
         logger.fatal("Error reading in config.")
         return False
-    
+
 def setUpConnection(ssid, password):
     network_manager = TelloNetworkManager(ssid, password)
     ok = network_manager.connect_to_network()
     return ok
 
+def frame_thread(camera_manager: TelloCameraManager):
+    """Continuously show frames from the drone camera."""
+    try:
+        while True:
+                frame = camera_manager.get_frames().frame
 
+                if frame is not None:
+                    rgb_image = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+                    cv2.imshow("Tello Video Stream - Original | Edge Detection", rgb_image)
+
+                # Keep-alive
+                # self.tello.send_rc_control(0, 0, 0, 0)
+
+                if cv2.waitKey(1) & 0xFF == ord('q'):
+                    break
+
+    except KeyboardInterrupt:
+            logger.warning("Emergency landing due to keyboard interrupt.")
+
+    finally:
+        cv2.destroyAllWindows()
+        logger.info("Camera stream stopped.")
 
 def droneControlFunc(controller: TelloControl):
     print("Drone control started. Use keys: w s a d i k j l z / (press q to exit)")
 
     def exit_control():
         print("Exiting control loop.")
-        raise StopIteration  # Custom stop signal
+        raise StopIteration
 
     control_map = {
         'w': lambda: controller.moveUp(30),
@@ -51,7 +74,7 @@ def droneControlFunc(controller: TelloControl):
         'l': lambda: controller.moveRight(30),
         'z': lambda: controller.takeOffDrone(),
         '/': lambda: controller.landDrone(),
-        'q': exit_control  # This will trigger a graceful exit
+        'q': exit_control
     }
 
     try:
@@ -60,44 +83,55 @@ def droneControlFunc(controller: TelloControl):
                 key = msvcrt.getwch().lower()
                 action = control_map.get(key)
                 if action:
-                    # print(f"Executing command: {key}")
-                    success = action()  # Execute the command and get the result
+                    success = action()
                     if not success:
                         print(f"Command failed: {key}")
-                    # Block further input until the current command is complete
-                    while msvcrt.kbhit():  # Clear any buffered key presses
-                        msvcrt.getwch()
+                    while msvcrt.kbhit():
+                        msvcrt.getwch()  # Clear input buffer
                 else:
                     print(f"Invalid key: {key}. Try again.")
     except StopIteration:
         print("Drone control ended.")
     finally:
         if controller.isFlying:
-            ok = controller.landDrone()
+            controller.landDrone()
 
 def main():
+    tello = None
+    try:
+        if not setUpConfig():
+            return
 
-    ok = setUpConfig()
-    if not ok:
-        return
-    
-    # print(config_data.network.wifi)
-    ok = setUpConnection(config_data.network.wifi.SSID, config_data.network.wifi.Password)
+        if not setUpConnection(config_data.network.wifi.SSID, config_data.network.wifi.Password):
+            return
 
-    if not ok:
-        return
-    tello = Tello()
-    threads = []
+        tello = Tello()
+        tello.connect()
+        logger.info("Drone connected.")
 
-    controller = TelloControl(tello) 
-    controller.connectDrone()
+        controller = TelloControl(tello)
+        camera_manager = TelloCameraManager(tello)
+        camera_manager.streamon()
 
-    controllerThread = threading.Thread(target=droneControlFunc, args=(controller,), daemon=True)
-    threads.append(controllerThread)
-    controllerThread.start()
+        CameraThread = frame_thread(camera_manager=camera_manager)
 
-    for thread in threads:
-        thread.join()
+        # Start drone control in a separate thread
+        controlThread = threading.Thread(target=droneControlFunc, args=(controller,), daemon=True)
+        controlThread.start()
 
-    logger.info("App Started.")
-main()  
+        # Wait for control thread to end (user presses q)
+        controlThread.join()
+
+        # Stop camera after control ends
+        camera_manager.streamoff()
+
+    except Exception as e:
+        logger.fatal(f"An unexpected error occurred: {e}")
+    finally:
+        if tello:
+            tello.end()
+        cv2.destroyAllWindows()
+        logger.info("Application closed gracefully.")
+
+if __name__ == "__main__":
+    main()
