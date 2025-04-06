@@ -122,9 +122,9 @@ def main():
         camera_manager.streamon() # adding the image frames on a seperate thread
 
         # Start drone control in a separate thread
-        controlThread = threading.Thread(target=droneControlFunc, args=(controller,), daemon=True)
-        thread.append(controlThread)
-        controlThread.start()        
+        # controlThread = threading.Thread(target=droneControlFunc, args=(controller,), daemon=True)
+        # thread.append(controlThread)
+        # controlThread.start()        
 
         app = StreamProcessorApp(camera_manager, "./model/saved_models/generator.pt")
         processThread = threading.Thread(target=app.start_processing, daemon=True)
