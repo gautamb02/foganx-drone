@@ -158,7 +158,7 @@ class FrameProcessor:
             img_tensor = self.preprocess_frame(frame)
             output_tensor = self.model_handler.infer(img_tensor)
 
-            results = person_model(output_tensor)
+            results = person_model.predict(output_tensor, verbose=False)
 
             logger.debug(f"Output frame shape {output_tensor.shape}")
             combined_frame = self.postprocess_frame(img_tensor, output_tensor, results)
@@ -182,12 +182,14 @@ class StreamProcessorApp:
             try:
                 processor = FrameProcessor(self.model_handler, FRAME_QUEUE, self.result_queue, self.stop_event)
 
-                # worker threads
-                for i in range(1, 3):    
-                    executor.submit(processor.infer_worker, i)
-
                 # display thread
                 executor.submit( processor.show_side_by_side )
+
+                # worker threads
+                for i in range(3):    
+                    executor.submit(processor.infer_worker, i)
+
+             
                 frame_id = 0
                 frame_counter = 0
 
