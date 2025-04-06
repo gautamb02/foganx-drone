@@ -112,16 +112,19 @@ class FrameProcessor:
         logger.debug("[Display] Display worker stopped.")
 
     def preprocess_frame(self, frame):
+        # Keep in RGB format
         frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
         frame_resized = cv2.resize(frame_rgb, (512, 512))
         logger.debug(f"resized image: {frame_resized.shape}")
-        img_tensor = torch.tensor(frame_resized / 255.0, dtype=torch.float32).permute(2, 0, 1).unsqueeze(0)
+        # Normalize to [-1, 1] range which is common for GANs
+        img_tensor = torch.tensor(frame_resized / 127.5 - 1.0, dtype=torch.float32).permute(2, 0, 1).unsqueeze(0)
         return img_tensor.cuda()
 
     def postprocess_frame(self, input_tensor, output_tensor, results):
         try:
-            input_img = (input_tensor[0].cpu().numpy().transpose(1, 2, 0) * 255).astype(np.uint8)
-            output_img = (output_tensor[0].cpu().numpy().transpose(1, 2, 0) * 255).astype(np.uint8)
+            # Denormalize from [-1, 1] to [0, 255] and keep in RGB
+            input_img = ((input_tensor[0].cpu().numpy().transpose(1, 2, 0) + 1.0) * 127.5).astype(np.uint8)
+            output_img = ((output_tensor[0].cpu().numpy().transpose(1, 2, 0) + 1.0) * 127.5).astype(np.uint8)
 
             output_img = np.ascontiguousarray(output_img) 
 
@@ -130,15 +133,14 @@ class FrameProcessor:
                 for box in boxes:
                     x1, y1, x2, y2 = map(int, box.xyxy[0])
                     conf = box.conf[0]
+                    # Draw in RGB format
                     cv2.rectangle(output_img, (x1, y1), (x2, y2), (0, 255, 0), 2)
-                    # Optionally add label
-                    # label = f"person {conf:.2f}"
-                    # cv2.putText(output_img, label, (x1, y1 - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 2)
 
             # Match shapes
             if input_img.shape != output_img.shape:
                 output_img = cv2.resize(output_img, (input_img.shape[1], input_img.shape[0]))
 
+            # Return in RGB format
             return np.hstack((input_img, output_img))
 
         except Exception as e:
@@ -146,27 +148,53 @@ class FrameProcessor:
             return input_tensor[0].cpu().numpy().transpose(1, 2, 0)  # Fallback image
 
     def infer_worker(self, worker_id):
-        print(f"[FrameProcessor-{worker_id}] Worker started.")
+        logger.debug(f"[FrameProcessor-{worker_id}] Worker started.")
+        retry_count = 0
+        max_retries = 3
         
         while not self.stop_event.is_set():
             try:
-                frame_number, frame = FRAME_QUEUE.get(timeout=1) # self.frame_queue.get(timeout=1)
+                frame_number, frame = FRAME_QUEUE.get(timeout=1)
+                if frame_number is None:  # Check for sentinel value
+                    logger.debug(f"[FrameProcessor-{worker_id}] Received sentinel, stopping.")
+                    break
+
+                if frame is None:
+                    logger.warning(f"[FrameProcessor-{worker_id}] Received None frame, skipping")
+                    FRAME_QUEUE.task_done()
+                    continue
+
+                try:
+                    img_tensor = self.preprocess_frame(frame)
+                    output_tensor = self.model_handler.infer(img_tensor)
+
+                    results = person_model.predict(output_tensor, verbose=False)
+                    logger.debug(f"[FrameProcessor-{worker_id}] Processing frame {frame_number}")
+                    combined_frame = self.postprocess_frame(img_tensor, output_tensor, results)
+
+                    self.result_queue.put((frame_number, combined_frame))
+                    retry_count = 0  # Reset retry count on success
+
+                except Exception as e:
+                    logger.error(f"[FrameProcessor-{worker_id}] Error processing frame: {str(e)}")
+                    retry_count += 1
+                    if retry_count >= max_retries:
+                        logger.error(f"[FrameProcessor-{worker_id}] Max retries reached, skipping frame")
+                        retry_count = 0
+                    else:
+                        # Put the frame back in the queue for retry
+                        FRAME_QUEUE.put((frame_number, frame))
+                    continue
+
+                FRAME_QUEUE.task_done()
+                
             except queue.Empty:
-                logger.debug("Queue Empty")
+                continue
+            except Exception as e:
+                logger.error(f"[FrameProcessor-{worker_id}] Error in worker loop: {str(e)}")
                 continue
 
-            img_tensor = self.preprocess_frame(frame)
-            output_tensor = self.model_handler.infer(img_tensor)
-
-            results = person_model.predict(output_tensor, verbose=False)
-
-            logger.debug(f"Output frame shape {output_tensor.shape}")
-            combined_frame = self.postprocess_frame(img_tensor, output_tensor, results)
-
-            self.result_queue.put((frame_number, combined_frame))
-            # self.frame_queue.task_done()
-            FRAME_QUEUE.task_done()
-        print(f"[FrameProcessor-{worker_id}] Worker stopped.")
+        logger.debug(f"[FrameProcessor-{worker_id}] Worker stopped.")
 
 
 class StreamProcessorApp:
@@ -182,41 +210,48 @@ class StreamProcessorApp:
             try:
                 processor = FrameProcessor(self.model_handler, FRAME_QUEUE, self.result_queue, self.stop_event)
 
-                # display thread
-                executor.submit( processor.show_side_by_side )
+                # Start display thread
+                executor.submit(processor.show_side_by_side)
 
-                # worker threads
+                # Start worker threads
+                # worker_futures = []
                 for i in range(3):    
                     executor.submit(processor.infer_worker, i)
 
-             
                 frame_id = 0
                 frame_counter = 0
 
                 while not self.stop_event.is_set():
                     try:
-                        if( frame_counter%3==0 ):
-                            frame: numpy.ndarray = self.camera_manager.get_frames().frame 
-                            # self.frame_queue.put((frame_id, frame))                        
-                            FRAME_QUEUE.put((frame_id,frame))
-                            frame_id += 1
+                        if frame_counter % 3 == 0:
+                            frame = self.camera_manager.get_frames()
+                            if frame is not None:
+                                FRAME_QUEUE.put((frame_id, frame))
+                                frame_id += 1
+                                logger.debug(f"[StreamProcessorApp] Added frame {frame_id} to queue")
+                            else:
+                                logger.warning("[StreamProcessorApp] Received None frame from camera")
 
-                    except queue.Full: 
-                        logger.debug("Frame Queue is full")
+                    except queue.Full:
+                        logger.warning("[StreamProcessorApp] Frame queue is full, dropping frame")
+                    except Exception as e:
+                        logger.error(f"[StreamProcessorApp] Error getting frame: {str(e)}")
                     finally:
-                        frame_counter+=1
+                        frame_counter += 1
+                        time.sleep(0.01)  # Small delay to prevent CPU overuse
 
             except KeyboardInterrupt:
-                print("[StreamProcessorApp] Interrupted by user.")
+                logger.info("[StreamProcessorApp] Interrupted by user.")
                 self.stop_event.set()
 
-            except Exception as e: 
-                print("Error in start_processing")
+            except Exception as e:
+                logger.error(f"[StreamProcessorApp] Error in start_processing: {str(e)}")
                 raise e
 
             finally:
                 self.stop_event.set()
+                # Send sentinel values to stop workers
                 for _ in range(3):
-                    # self.frame_queue.put((None, None))
-                    FRAME_QUEUE.put((None,None))
+                    FRAME_QUEUE.put((None, None))
+                
                 cv2.destroyAllWindows()

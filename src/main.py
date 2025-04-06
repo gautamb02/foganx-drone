@@ -125,7 +125,7 @@ def main():
 
         tello = Tello()
         tello.connect()
-        logger.info("Drone connected.")
+        logger.info(f"Drone connected. {tello.get_battery()}% battery.")
         thread = []
 
         controller = TelloControl(tello)
