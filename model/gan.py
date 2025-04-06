@@ -150,46 +150,55 @@ class StreamProcessorApp:
     def __init__(self, camera_manager, model_path):
         self.camera_manager = camera_manager
         self.model_handler = ModelHandler(model_path)
-        self.frame_queue = queue.Queue(maxsize=5)
-        self.result_queue = queue.PriorityQueue(maxsize=5)
+        self.frame_queue = queue.Queue(maxsize=2)  # Very small queue to prevent frame buildup
+        self.result_queue = queue.PriorityQueue(maxsize=2)  # Very small queue to prevent frame buildup
         self.stop_event = threading.Event()
+        self.last_frame_time = time.time()
+        self.frame_interval = 1/30  # Target 30 FPS
+        self.frame_counter = 0
 
     def start_processing(self):
-        with ThreadPoolExecutor(max_workers=4) as executor:
+        with ThreadPoolExecutor(max_workers=2) as executor:
             try:
                 processor = FrameProcessor(self.model_handler, self.frame_queue, self.result_queue, self.stop_event)
 
                 # worker threads
-                for i in range(1, 3):    
+                for i in range(1, 2):  # Single worker for inference
                     executor.submit(processor.infer_worker, i)
 
                 # display thread
-                executor.submit( processor.show_side_by_side )
+                executor.submit(processor.show_side_by_side)
                 frame_id = 0
-                frame_counter = 0
 
                 while not self.stop_event.is_set():
                     try:
-                        if( frame_counter%3==0 ):
-                            frame: numpy.ndarray = self.camera_manager.get_frames().frame 
-                            self.frame_queue.put((frame_id, frame))                        
-                            frame_id += 1
+                        current_time = time.time()
+                        if current_time - self.last_frame_time >= self.frame_interval:
+                            if self.frame_counter % 2 == 0:  # Process every 2nd frame
+                                frame = self.camera_manager.get_frames().frame
+                                if frame is not None:
+                                    try:
+                                        self.frame_queue.put_nowait((frame_id, frame))
+                                        frame_id += 1
+                                    except queue.Full:
+                                        # If queue is full, skip this frame
+                                        pass
+                            self.frame_counter += 1
+                            self.last_frame_time = current_time
 
-                    except queue.Full: 
-                        logger.debug("Frame Queue is full")
-                    finally:
-                        frame_counter+=1
+                    except Exception as e:
+                        logger.error(f"Error processing frame: {e}")
 
             except KeyboardInterrupt:
                 print("[StreamProcessorApp] Interrupted by user.")
                 self.stop_event.set()
 
-            except Exception as e: 
+            except Exception as e:
                 print("Error in start_processing")
                 raise e
 
             finally:
                 self.stop_event.set()
-                for _ in range(3):
+                for _ in range(2):
                     self.frame_queue.put((None, None))
                 cv2.destroyAllWindows()

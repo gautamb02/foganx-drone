@@ -1,0 +1,91 @@
+@startuml DroneGANSystem
+
+' Enhanced skin parameters with modern color scheme
+skinparam backgroundColor #FFFFFF
+skinparam componentStyle uml2
+skinparam defaultFontName "Segoe UI"
+skinparam defaultFontSize 13
+skinparam packageStyle rectangle
+skinparam packageBorderColor #1A237E
+skinparam packageBackgroundColor #E8EAF6
+skinparam componentBorderColor #1A237E
+skinparam componentBackgroundColor #FFFFFF
+skinparam arrowColor #0D47A1
+skinparam arrowThickness 1
+skinparam noteBackgroundColor #E8EAF6
+skinparam noteBorderColor #1A237E
+skinparam noteFontSize 12
+skinparam noteFontColor #1A237E
+skinparam titleFontSize 18
+skinparam titleFontColor #1A237E
+skinparam legendFontSize 12
+skinparam legendFontColor #1A237E
+skinparam shadowing false
+skinparam roundcorner 18
+skinparam linetype ortho
+skinparam nodesep 100
+skinparam ranksep 100
+
+
+' Define packages with enhanced styling
+package "Hardware Layer" #E8EAF6 {
+    [Tello Drone] as drone #FFFFFF
+    [Camera] as camera #FFFFFF
+}
+
+package "Control Layer" #E8EAF6 {
+    [Tello Manager] as telloManager #FFFFFF
+    [Camera Manager] as cameraManager #FFFFFF
+}
+
+package "Processing Layer" #E8EAF6 {
+    [Image Preprocessor] as preprocessor #FFFFFF
+    [Processing Unit] as ganProcessor #FFFFFF
+    [Output Handler] as outputHandler #FFFFFF
+}
+
+package "Storage Layer" #E8EAF6 {
+    [Model Storage] as modelStorage #FFFFFF
+}
+
+package "User Interface" #E8EAF6 {
+    [User Interface] as ui #FFFFFF
+    [Live Feed] as liveFeed #FFFFFF
+    [Real-time Output] as realtimeOutput #FFFFFF
+}
+
+' Define relationships with beautiful colors and styles
+drone -[#0D47A1,thickness=2]-> telloManager : "Controls"
+camera -[#0D47A1,thickness=2]-> cameraManager : "Stream"
+telloManager -[#0D47A1,thickness=2]-> cameraManager : "Coordinate"
+cameraManager -[#0D47A1,thickness=2]-> preprocessor : "Frames"
+preprocessor -[#0D47A1,thickness=2]-> ganProcessor : "Processed Frames"
+ganProcessor -[#0D47A1,thickness=2]-> outputHandler : "Enhanced\nImages"
+modelStorage -[#0D47A1,thickness=2]-> ganProcessor : "Load Model"
+outputHandler -[#0D47A1,thickness=2]-> realtimeOutput : "Display"
+cameraManager -[#0D47A1,thickness=2]-> liveFeed : "Stream"
+ui -[#0D47A1,thickness=2]-> telloManager : "Commands"
+ui -[#0D47A1,thickness=2]-> cameraManager : "Control"
+ui -[#0D47A1,thickness=2]-> ganProcessor : "Parameters"
+
+' Add enhanced notes with better styling
+note right of ganProcessor
+  <b>GAN Processor:</b>
+  • Model Loader
+  • Generator
+  • Discriminator
+  • Post-processor
+end note
+
+note right of telloManager
+  <b>Tello Manager:</b>
+  • Connection Handler
+  • Battery Monitor
+  • Flight Controller
+end note
+
+' Add title and legend with enhanced styling
+' title <color:#1A237E>System Architecture</color>
+
+
+@enduml

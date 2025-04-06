@@ -5,3 +5,4 @@ pillow
 PyYAML
 invoke
 av
+pygame
