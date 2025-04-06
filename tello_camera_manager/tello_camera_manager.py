@@ -1,5 +1,6 @@
 import cv2
 import time
+from djitellopy import Tello
 
 class TelloCameraManager:
     def __init__(self, tello):
@@ -36,3 +37,24 @@ class TelloCameraManager:
         """
         return self.frame_read
         
+
+# if __name__ == "__main__":
+#     tello = Tello()
+#     tello.connect()
+    
+#     camera_manager = TelloCameraManager(tello=tello)
+#     camera_manager.streamon()
+
+#     try:
+#         while True:
+#             frame = camera_manager.get_frames().frame
+#             if frame is not None:
+#                 cv2.imshow("Tello Video Feed", frame)
+
+#             # Exit on 'q' key press
+#             if cv2.waitKey(1) & 0xFF == ord('q'):
+#                 break
+
+#     finally:
+#         camera_manager.streamoff()
+#         cv2.destroyAllWindows()
