@@ -10,7 +10,8 @@ file_handler = logging.FileHandler(LOG_FILE)
 file_handler.setLevel(logging.DEBUG) 
 
 terminal_handler = logging.StreamHandler()
-terminal_handler.setLevel(logging.WARNING)  # Log WARNING, ERROR, CRITICAL to the terminal
+# terminal_handler.setLevel(logging.WARNING)  # Log WARNING, ERROR, CRITICAL to the terminal
+terminal_handler.setLevel(logging.INFO)  # Log WARNING, ERROR, CRITICAL to the terminal
 
 formatter = logging.Formatter(
     "%(asctime)s - %(name)s - %(levelname)s - %(lineno)d - %(message)s"
