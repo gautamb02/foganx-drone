@@ -1,6 +1,7 @@
 import cv2
 import time
 from djitellopy import Tello
+from logger.log import logger
 
 class TelloCameraManager:
     def __init__(self, tello):
@@ -35,7 +36,15 @@ class TelloCameraManager:
         """
         Return the frames
         """
-        return self.frame_read
+        try:
+            frame = self.frame_read.frame
+            if frame is None or frame.size == 0:
+                logger.warning("Received empty or corrupted frame")
+                return None
+            return frame
+        except Exception as e:
+            logger.error(f"Error getting frame: {str(e)}")
+            return None
         
 
 # if __name__ == "__main__":
